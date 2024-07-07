@@ -43,7 +43,6 @@ defmodule ShopifyTools.Shopify do
       @behaviour ShopifyTools.Shopify
       require Logger
 
-      @enforce_keys [:client_id, :client_secret]
       defstruct client_id: nil,
                 client_secret: nil,
                 endpoint: Keyword.fetch!(opts, :endpoint),
@@ -65,9 +64,11 @@ defmodule ShopifyTools.Shopify do
       end
 
       def shopify() do
+        IO.inspect(Application.get_env(:protector, __MODULE__), label: "===== hereh: ")
+
         %__MODULE__{
-          client_id: Application.get_env(:protector, Protector.Shopify)[:client_id],
-          client_secret: Application.get_env(:protector, Protector.Shopify)[:client_secret]
+          client_id: Application.get_env(:protector, __MODULE__)[:client_id],
+          client_secret: Application.get_env(:protector, __MODULE__)[:client_secret]
         }
       end
 
