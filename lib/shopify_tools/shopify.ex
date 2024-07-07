@@ -43,8 +43,9 @@ defmodule ShopifyTools.Shopify do
       @behaviour ShopifyTools.Shopify
       require Logger
 
-      defstruct client_id: Keyword.fetch!(opts, :client_id),
-                client_secret: Keyword.fetch!(opts, :client_secret),
+      @enforce_keys [:client_id, :client_secret]
+      defstruct client_id: nil,
+                client_secret: nil,
                 endpoint: Keyword.fetch!(opts, :endpoint),
                 app_url: Keyword.get(opts, :app_url, nil),
                 api_version: Keyword.get(opts, :api_version, "2024-04"),
@@ -64,10 +65,13 @@ defmodule ShopifyTools.Shopify do
       end
 
       def shopify() do
-        %__MODULE__{}
+        %__MODULE__{
+          client_id: Application.get_env(:protector, Protector.Shopify)[:client_id],
+          client_secret: Application.get_env(:protector, Protector.Shopify)[:client_secret]
+        }
       end
 
-      def register_webhooks(shopify \\ %__MODULE__{}, session) do
+      def register_webhooks(shopify \\ shopify(), session) do
         ShopifyTools.Webhooks.configure_webhooks(shopify, session)
       end
 
@@ -75,13 +79,11 @@ defmodule ShopifyTools.Shopify do
       get shopify session from session
       """
       def get_session(conn) do
-        shopify = %__MODULE__{}
-
         Plug.Conn.get_session(conn, :shopify_session, nil)
       end
 
       def fetch_shopify_session(conn, _opts) do
-        shopify = %__MODULE__{}
+        shopify = shopify()
 
         case ShopifyTools.Plug.Session.create_session_token_context(conn, shopify) do
           {shop, claims, session_id, token} ->
@@ -114,10 +116,13 @@ defmodule ShopifyTools.Shopify do
         2.2. case is valid - return conn
       """
       def authenticate(conn, _opts) do
-        shopify = %__MODULE__{}
+        shopify = shopify()
+
+        Logger.debug("authenticate plug")
 
         case ShopifyTools.Plug.Session.create_session_token_context(conn, shopify) do
           {shop, claims, session_id, token} ->
+            Logger.debug("got session from token")
             # TODO: put session under session_id key?
             existing_session = Plug.Conn.get_session(conn, :shopify_session, nil)
 
@@ -137,6 +142,7 @@ defmodule ShopifyTools.Shopify do
 
               conn
             else
+              Logger.debug("cannot get session from token")
               conn
             end
 
@@ -151,7 +157,7 @@ defmodule ShopifyTools.Shopify do
       plug to verify webhook
       """
       def verify_webhook(conn, _opts) do
-        shopify = %__MODULE__{}
+        shopify = shopify()
 
         case ShopifyTools.Hmac.validate(conn, shopify) do
           {:ok, check} ->
@@ -174,7 +180,7 @@ defmodule ShopifyTools.Shopify do
       end
 
       def render_bounce_page(conn, _params) do
-        shopify = %__MODULE__{}
+        shopify = shopify()
 
         body = """
         <head>
