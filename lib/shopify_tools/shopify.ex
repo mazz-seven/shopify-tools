@@ -64,11 +64,9 @@ defmodule ShopifyTools.Shopify do
       end
 
       def shopify() do
-        IO.inspect(Application.get_env(:protector, __MODULE__), label: "===== hereh: ")
-
         %__MODULE__{
-          client_id: Application.get_env(:protector, __MODULE__)[:client_id],
-          client_secret: Application.get_env(:protector, __MODULE__)[:client_secret]
+          client_id: Application.get_env(:shopify_tools, :client_id),
+          client_secret: Application.get_env(:shopify_tools, :client_secret)
         }
       end
 

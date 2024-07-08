@@ -1,11 +1,18 @@
 defmodule ShopifyTools.Guardian do
   require Logger
 
+  # AppBridge frequently sends future `nbf`, and it causes `{:error, :token_not_yet_valid}`.
+  # Accept few seconds clock skew to avoid this error.
+  # 
+  # see: https://github.com/Shopify/shopify_python_api/blob/master/shopify/session_token.py#L58-L60
+  @allowed_drift Application.compile_env(:shopify_tools, :allowed_drift, 10_000)
+
   use Guardian,
     otp_app: :engine,
-    issuer: "AMOS",
-    secret_key: "eeca20e844ae5cc4471d0c8307eb8518",
-    allowed_algos: ["HS512", "HS256"]
+    issuer: {Application, :get_env, [:shopify_tools, :app]},
+    secret_key: {Application, :get_env, [:shopify_tools, :client_secret]},
+    allowed_algos: ["HS512", "HS256"],
+    allowed_drift: @allowed_drift
 
   def subject_for_token(%{url: url} = shop, _claims) do
     Logger.info("subject_for_token #{inspect(shop)}")
@@ -17,7 +24,7 @@ defmodule ShopifyTools.Guardian do
     {:ok, url}
   end
 
-  def subject_for_token(shop, _) do
+  def subject_for_token(_shop, _) do
     {:error, :url_not_found}
   end
 
@@ -27,19 +34,19 @@ defmodule ShopifyTools.Guardian do
   lifetime. These tokens contain the shop url in the
   "sub" claim.
   """
-  def resource_from_claims(%{"dest" => "https://" <> shop_url} = claims) do
+  def resource_from_claims(%{"dest" => "https://" <> shop_url} = _claims) do
     Logger.info("resource_from_claims #{inspect(shop_url)}")
     shop = %{url: shop_url}
     {:ok, shop}
   end
 
-  def resource_from_claims(%{"sub" => shop_url} = claims) do
+  def resource_from_claims(%{"sub" => shop_url} = _claims) do
     Logger.info("resource_from_claims/sub #{inspect(shop_url)}")
     shop = %{url: shop_url}
     {:ok, shop}
   end
 
-  def resource_from_claims(claims) do
+  def resource_from_claims(_claims) do
     {:error, :reason_for_error}
   end
 end
