@@ -13,7 +13,7 @@ defmodule ShopifyTools.Webhooks do
     Logger.info("configure webhooks topics #{inspect(shopify.webhooks)}")
 
     with {:ok, current_webhooks} <- get_current_webhooks(session, shopify) do
-      current_webhook_topics = Enum.map(current_webhooks, &String.to_existing_atom(&1.topic))
+      current_webhook_topics = Enum.map(current_webhooks, &String.to_existing_atom(&1.node.topic))
 
       Logger.info(
         "All current webhook topics for #{session.shop}: #{Enum.join(current_webhook_topics, ", ")}"
@@ -59,7 +59,27 @@ defmodule ShopifyTools.Webhooks do
   def get_current_webhooks(session, shopify) do
     req =
       Req.new(
-        url: "https://#{session.shop}/admin/api/#{shopify.api_version}/webhooks.json",
+        url: "https://#{session.shop}/admin/api/#{shopify.api_version}/graphql.json",
+        json: %{
+          query: """
+          query {
+            webhookSubscriptions(first: 100) {
+              edges {
+                node {
+                  id
+                  topic
+                  endpoint {
+                    __typename
+                    ... on WebhookHttpEndpoint {
+                      callbackUrl
+                    }
+                  }
+                }
+              }
+            }
+          }
+          """
+        },
         headers: [
           "X-Shopify-Access-Token": session.access_token,
           "Content-Type": "application/json"
@@ -67,9 +87,9 @@ defmodule ShopifyTools.Webhooks do
         decode_json: [keys: :atoms]
       )
 
-    case Req.get(req) do
+    case Req.post(req) do
       {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
-        %{webhooks: webhooks} = body
+        %{data: %{webhookSubscriptions: %{edges: webhooks}}} = body
         {:ok, webhooks}
 
       {:ok, %Req.Response{status: _status, body: body}} ->
@@ -83,12 +103,32 @@ defmodule ShopifyTools.Webhooks do
   def create_webhook(shopify, session, topic, webhook) do
     req =
       Req.new(
-        url: "https://#{session.shop}/admin/api/#{shopify.api_version}/webhooks.json",
+        url: "https://#{session.shop}/admin/api/#{shopify.api_version}/graphql.json",
         json: %{
-          webhook: %{
+          query: """
+          mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+            webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+              webhookSubscription {
+                id
+                topic
+                format
+                endpoint {
+                  __typename
+                  ... on WebhookHttpEndpoint {
+                    callbackUrl
+                  }
+                }
+              }
+            }
+          }
+          """,
+          variables: %{
             topic: topic,
-            address: Path.join(shopify.endpoint.url(), Keyword.fetch!(webhook, :callback_url)),
-            format: Keyword.get(webhook, :format, "json")
+            webhookSubscription: %{
+              callbackUrl:
+                Path.join(shopify.endpoint.url(), Keyword.fetch!(webhook, :callback_url)),
+              format: Keyword.get(webhook, :format, "JSON")
+            }
           }
         },
         headers: [
@@ -100,7 +140,7 @@ defmodule ShopifyTools.Webhooks do
 
     case Req.post(req) do
       {:ok, %Req.Response{status: status, body: body}} when status in 200..299 ->
-        %{webhook: webhook} = body
+        %{data: %{webhookSubscriptionCreate: %{webhookSubscription: webhook}}} = body
         {:ok, webhook}
 
       {:ok, %Req.Response{status: _status, body: body}} ->
