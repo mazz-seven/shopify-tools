@@ -121,7 +121,7 @@ defmodule ShopifyTools.Shopify do
 
         case ShopifyTools.Plug.Session.create_session_token_context(conn, shopify) do
           {shop, claims, session_id, token} ->
-            Logger.debug("got session from token")
+            Logger.debug("got session from token, validating")
             # TODO: put session under session_id key?
             existing_session = Plug.Conn.get_session(conn, :shopify_session, nil)
 
@@ -141,7 +141,7 @@ defmodule ShopifyTools.Shopify do
 
               conn
             else
-              Logger.debug("cannot get session from token")
+              Logger.debug("session is valid proceeding")
               conn
             end
 
@@ -182,10 +182,15 @@ defmodule ShopifyTools.Shopify do
         shopify = shopify()
 
         body = """
-        <head>
-            <meta name="shopify-api-key" content="#{shopify.client_id}" />
-            <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
-        </head>
+        <!DOCTYPE html>
+        <html lang="en" class="[scrollbar-gutter:stable]">
+          <head>
+              <meta name="shopify-api-key" content="#{shopify.client_id}" />
+              <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js?apiKey=#{shopify.client_id}"></script>
+          </head>
+          <body>
+          </body>
+        </html>
         """
 
         conn
@@ -196,9 +201,16 @@ defmodule ShopifyTools.Shopify do
 
       defp redirect_to_session_token_bounce_page(conn) do
         params = Map.drop(conn.query_params, ["id_token"])
+        session = Plug.Conn.get_session(conn, :shopify_session, nil)
+
+        Logger.debug(
+          "redirect to bounce page params: #{inspect(params)} session: #{inspect(session)}"
+        )
 
         params =
-          Map.put(params, "shopify-reload", "#{conn.request_path}?#{URI.encode_query(params)}")
+          params
+          |> Map.put("shopify-reload", "#{conn.request_path}?#{URI.encode_query(params)}")
+          |> Map.put_new("shop", session.shop)
 
         conn
         |> put_resp_header("location", "/auth/session-token-bounce?#{URI.encode_query(params)}")
